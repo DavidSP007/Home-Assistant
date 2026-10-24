@@ -1,1 +1,1 @@
-"""Tests for the Simpson & Partners integration."""
+"""Test suite root."""

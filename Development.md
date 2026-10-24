@@ -24,7 +24,7 @@ uv run pytest
 
 ## Mock S&P Connect server
 
-`tests/mock_connect.py` serves the S&P Connect endpoints from in-memory state.
+`tests/components/simpson_partners/mock_connect.py` serves the S&P Connect endpoints from in-memory state.
 Tests change that state, or inject an error response, to drive each case.
 When S&P Connect's response shapes change, update the mock and
 `api/models.py` together.

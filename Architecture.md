@@ -38,7 +38,7 @@ internal databases.
   OpenAPI file and some names may change.
 - **Start and stop charging are not in the client yet.** The firmware has no
   plain start/stop command; a request has gone to the firmware team.
-- **Tests run against a mock S&P Connect server** (`tests/mock_connect.py`)
+- **Tests run against a mock S&P Connect server** (`tests/components/simpson_partners/mock_connect.py`)
   over real HTTP, so they exercise the same path as production.
 
 ## Distribution

@@ -20,6 +20,8 @@ dev = [
 [tool.ruff]
 target-version = "py313"
 line-length = 88
+# Code samples in the docs are illustrations, not code under the gates.
+extend-exclude = ["*.md"]
 
 [tool.ruff.lint]
 # A curated set close to Home Assistant core's own ruff rules.
