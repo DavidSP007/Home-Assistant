@@ -1,4 +1,4 @@
-# Home Assistant Plug Repository: Engineering Standards
+# Simpson & Partners Home Assistant Integration: Engineering Standards
 
 These standards apply to every change in this repository, whether written by a
 person or by an AI assistant. They are not optional.
@@ -94,9 +94,7 @@ Always:
 try:
     await api.get_status()
 except ApiError as err:
-    raise UpdateFailed(
-        f"Failed to update device: {err}"
-    ) from err
+    raise UpdateFailed(f"Failed to update device: {err}") from err
 ```
 
 Errors must include useful debugging information.
@@ -215,26 +213,40 @@ No code may be committed with failing checks.
 
 ### 15. Repository Structure
 
+The integration ships through HACS first and is built so it can move into Home
+Assistant core later. Home Assistant only loads platform files (`sensor.py`,
+`switch.py` and so on) from the top of the integration folder, and core keeps
+tests outside it, so the layout is:
+
 ```text
 custom_components/
-└── smart_plug/
+└── simpson_partners/
     ├── __init__.py
     ├── manifest.json
     ├── const.py
     ├── coordinator.py
     ├── config_flow.py
+    ├── application_credentials.py
     ├── diagnostics.py
-    ├── repair.py
-    ├── api/
-    │   ├── client.py
-    │   ├── models.py
-    │   └── exceptions.py
-    ├── entities/
-    │   ├── sensor.py
-    │   ├── switch.py
-    │   └── binary_sensor.py
-    └── tests/
+    ├── repairs.py
+    ├── entity.py            # shared base entity
+    ├── sensor.py
+    ├── switch.py
+    ├── binary_sensor.py
+    ├── strings.json
+    ├── translations/
+    └── api/                 # S&P Connect client; no Home Assistant imports
+        ├── auth.py
+        ├── client.py
+        ├── models.py
+        ├── parsing.py
+        └── exceptions.py
+tests/                       # at the repository root, outside the integration
+hacs.json
 ```
+
+The `api/` package must never import Home Assistant, so it can later become a
+separate PyPI library, which Home Assistant core requires.
 
 ### 16. AI Development Rules
 
