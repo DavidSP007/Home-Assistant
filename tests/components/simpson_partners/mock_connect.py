@@ -154,6 +154,8 @@ def create_app(state: MockConnectState) -> web.Application:
     app.router.add_get("/v1/chargers/{charger_id}/sessions", sessions)
     app.router.add_put("/v1/chargers/{charger_id}/schedule", command_accepted)
     app.router.add_put("/v1/chargers/{charger_id}/current-limit", command_accepted)
+    app.router.add_post("/v1/chargers/{charger_id}/start", command_accepted)
+    app.router.add_post("/v1/chargers/{charger_id}/stop", command_accepted)
     app.router.add_get("/v1/commands/{command_id}", command)
     return app
 

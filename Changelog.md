@@ -7,3 +7,4 @@
 - Mock S&P Connect server and tests.
 - HACS packaging and CI quality gates.
 - Licensed under the Apache License 2.0.
+- Start and stop charging in the API client.

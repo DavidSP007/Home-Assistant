@@ -23,6 +23,8 @@ PATH_TELEMETRY: Final = "/chargers/{charger_id}/telemetry"
 PATH_SESSIONS: Final = "/chargers/{charger_id}/sessions"
 PATH_SCHEDULE: Final = "/chargers/{charger_id}/schedule"
 PATH_CURRENT_LIMIT: Final = "/chargers/{charger_id}/current-limit"
+PATH_START: Final = "/chargers/{charger_id}/start"
+PATH_STOP: Final = "/chargers/{charger_id}/stop"
 PATH_COMMAND: Final = "/commands/{command_id}"
 
 # S&P Connect allows at most 3 schedule windows (firmware setSched limit).
