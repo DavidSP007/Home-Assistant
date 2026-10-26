@@ -1,0 +1,48 @@
+# Quality gates from CLAUDE.md section 14, run on every push and pull request,
+# plus Home Assistant's own manifest check (hassfest) and the HACS check.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+      - run: uv sync --group dev
+      - name: Lint
+        run: uv run ruff check .
+      - name: Format
+        run: uv run ruff format --check .
+      - name: Types
+        run: uv run mypy custom_components tests
+      - name: Tests
+        run: uv run pytest
+
+  hassfest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: home-assistant/actions/hassfest@master
+
+  hacs:
+    # The HACS action can only validate public repositories. It is skipped
+    # while this repository is private and runs once it is made public.
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: hacs/action@main
+        with:
+          category: integration
+          # Repository description and topics are set in GitHub settings, not in
+          # code; brand images arrive with the entities release.
+          ignore: brands description topics

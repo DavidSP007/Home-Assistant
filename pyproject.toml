@@ -1,0 +1,55 @@
+# Tooling for the Simpson & Partners integration. Home Assistant installs the
+# integration from custom_components/; this file only configures the quality
+# gates (CLAUDE.md section 14). Runtime dependencies live in manifest.json.
+
+[project]
+name = "simpson-partners-ha"
+version = "0.1.0"
+requires-python = ">=3.13"
+
+[dependency-groups]
+dev = [
+  "aiohttp>=3.11",
+  "mypy>=1.15",
+  "pytest>=8.3",
+  "pytest-asyncio>=0.25",
+  "pytest-cov>=6.0",
+  "ruff>=0.9",
+]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 88
+# Code samples in the docs are illustrations, not code under the gates.
+extend-exclude = ["*.md"]
+
+[tool.ruff.lint]
+# A curated set close to Home Assistant core's own ruff rules.
+select = [
+  "A", "ANN", "ASYNC", "B", "BLE", "C4", "D", "E", "F", "G", "I", "LOG", "N",
+  "PIE", "PL", "PT", "PTH", "RET", "RSE", "RUF", "S", "SIM", "SLF", "T20",
+  "TRY", "UP", "W",
+]
+ignore = [
+  "D203",    # we use D211 (no blank line before class docstring)
+  "D213",    # we use D212 (summary on the first line)
+  "TRY003",  # exception messages carry request detail by design
+  "TRY004",  # parsing raises ValueError for any malformed field, type or value
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "PLR2004", "SLF001"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+explicit_package_bases = true
+disallow_any_explicit = true
+warn_unreachable = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "--cov=custom_components.simpson_partners --cov-report=term-missing --cov-fail-under=95"
