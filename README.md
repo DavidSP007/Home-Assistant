@@ -30,3 +30,7 @@ Install through [HACS](https://hacs.xyz) as a custom repository, then add
 - [API.md](API.md): the S&P Connect endpoints it uses.
 - [Development.md](Development.md): how to run the checks and tests.
 - [Changelog.md](Changelog.md): what changed in each release.
+
+## License
+
+Apache License 2.0, the same license as Home Assistant core. See [LICENSE](LICENSE).
