@@ -84,6 +84,22 @@ Strictly follow Home Assistant architecture standards:
 - Repairs support.
 - Translation support.
 
+The integration is distributed through HACS as a custom integration (decided
+2026-10-24). It is not submitted to Home Assistant core for now, but it is
+built to the Home Assistant Integration Quality Scale so that a later move to
+core is a series of small pull requests, not a rewrite:
+
+- Meet every Bronze, Silver and Gold rule, and the Platinum rules where they
+  apply.
+- Track each rule as `done`, `todo` or `exempt` (with a reason) in
+  `quality_scale.yaml`.
+- Rules and their reasoning:
+  <https://developers.home-assistant.io/docs/core/integration-quality-scale/rules>
+
+The domain name is permanent once released. It must be brand specific, not a
+generic name such as `smart_plug`. Until it is confirmed, this document writes
+it as `<domain>`.
+
 ### 6. Error Handling
 
 Never silently swallow exceptions.
@@ -134,9 +150,11 @@ Required:
 - Config flow tests
 - Entity tests
 
-Target:
+Target (these match the Home Assistant quality scale):
 
-- 90% coverage
+- Above 95% coverage for every module
+- 100% coverage for config, options, reauthentication and reconfigure flows,
+  including recovery from each error
 - Meaningful assertions
 - No superficial tests
 
@@ -170,6 +188,12 @@ The repository must contain:
 - `Development.md`
 - `Changelog.md`
 
+It must also contain end-user documentation in `docs/user-guide.md`, written
+to the quality scale `docs-*` rules: what the product is, step-by-step setup
+and removal, every setup field and option, supported devices and functions,
+how data is updated, use cases, automation examples, known limitations and
+troubleshooting.
+
 ### 11. Configuration Management
 
 No hard-coded values. Use `const.py` for:
@@ -179,6 +203,10 @@ No hard-coded values. Use `const.py` for:
 - Timeouts
 - API endpoints
 - Entity keys
+
+User-facing text (entity names, errors, setup screens) belongs in
+`strings.json` and `translations/`, and icons in `icons.json`, not in
+`const.py`.
 
 ### 12. Performance Standards
 
@@ -211,30 +239,63 @@ mypy .
 pytest
 ```
 
+CI must also run:
+
+- [hassfest](https://github.com/home-assistant/actions#hassfest), Home
+  Assistant's manifest and structure validator.
+- The [HACS action](https://github.com/hacs/action), which HACS requires before
+  a repository can be listed in its default store.
+
 No code may be committed with failing checks.
 
 ### 15. Repository Structure
 
+This layout follows the rules Home Assistant and HACS enforce:
+
+- Home Assistant loads each entity platform by file name from the top of the
+  integration folder (`sensor.py`, `switch.py`). Platform files in a subfolder
+  are never found.
+- HACS ships everything inside `custom_components/<domain>/` to users, so
+  tests, docs and tooling stay outside it.
+- One integration per repository.
+
 ```text
+hacs.json                        HACS metadata (at least a name)
+README.md  Architecture.md  API.md  Development.md  Changelog.md
+docs/
+└── user-guide.md                end-user documentation (section 10)
 custom_components/
-└── smart_plug/
-    ├── __init__.py
-    ├── manifest.json
+└── <domain>/
+    ├── __init__.py              setup and unload of a config entry
+    ├── manifest.json            includes version, codeowners, iot_class
     ├── const.py
-    ├── coordinator.py
     ├── config_flow.py
+    ├── coordinator.py
+    ├── entity.py                shared base entity
+    ├── sensor.py                one file per entity platform,
+    ├── binary_sensor.py         at the top level
+    ├── switch.py
+    ├── number.py
     ├── diagnostics.py
-    ├── repair.py
-    ├── api/
-    │   ├── client.py
-    │   ├── models.py
-    │   └── exceptions.py
-    ├── entities/
-    │   ├── sensor.py
-    │   ├── switch.py
-    │   └── binary_sensor.py
-    └── tests/
+    ├── repairs.py               only when a repair flow is needed
+    ├── strings.json             source of user-facing text
+    ├── translations/en.json
+    ├── icons.json
+    ├── services.yaml            only if the integration adds actions
+    ├── quality_scale.yaml       quality scale progress (section 5)
+    ├── brand/icon.png           brand assets (logo.png optional)
+    └── api/                     S&P Connect client
+        ├── client.py
+        ├── models.py
+        └── exceptions.py
+tests/
+└── components/<domain>/         same shape as Home Assistant core
 ```
+
+The `api/` package must not import anything from Home Assistant. It is async,
+fully typed, and accepts an injected `aiohttp` session. That keeps it ready to
+be extracted into a standalone PyPI library, which Home Assistant core
+requires, without changing the integration's design.
 
 ### 16. AI Development Rules
 
@@ -265,6 +326,8 @@ A feature is only complete when:
 - [ ] Error handling implemented
 - [ ] Logging implemented
 - [ ] Home Assistant standards followed
+- [ ] `quality_scale.yaml` updated
+- [ ] hassfest and HACS validation pass
 
 If any item is missing, the feature is not complete.
 
