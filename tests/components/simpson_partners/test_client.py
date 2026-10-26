@@ -106,6 +106,34 @@ async def test_set_current_limit(
     assert state.received[-1][2] == {"amps": 16}
 
 
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [("async_start_charging", "start"), ("async_stop_charging", "stop")],
+)
+async def test_start_and_stop_charging(
+    client: SPConnectClient, state: MockConnectState, method: str, path: str
+) -> None:
+    """Start and stop are bodiless POSTs that return the command."""
+    command = await getattr(client, method)(CHARGER_ID)
+
+    assert command.id == COMMAND_ID
+    assert state.received[-1] == ("POST", f"/v1/chargers/{CHARGER_ID}/{path}", None)
+
+
+async def test_stop_refused_for_site_charger(
+    client: SPConnectClient, state: MockConnectState
+) -> None:
+    """A charger S&P Connect cannot pause reliably is refused with its code."""
+    state.error = InjectedError(
+        409, {"error": "control_unavailable", "message": "Managed by a site"}
+    )
+
+    with pytest.raises(SPConnectResponseError) as caught:
+        await client.async_stop_charging(CHARGER_ID)
+    assert caught.value.status == 409
+    assert caught.value.code == "control_unavailable"
+
+
 async def test_get_command(client: SPConnectClient, state: MockConnectState) -> None:
     """A command's delivery state is read back."""
     state.command_status = "acknowledged"

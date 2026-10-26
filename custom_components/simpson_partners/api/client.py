@@ -5,8 +5,9 @@ requests, turns every failure into an ``SPConnectError`` subclass, and returns
 typed models. It holds no Home Assistant state, so it can later move into a
 standalone PyPI library unchanged.
 
-Start and stop charging are not here yet: they wait on a firmware command
-(see Architecture.md).
+Start and stop resume and pause the charge (the firmware's ``control``
+command, sent by S&P Connect). S&P Connect refuses them with 409 for chargers
+it cannot pause reliably; see Architecture.md.
 """
 
 from __future__ import annotations
@@ -26,7 +27,9 @@ from ..const import (
     PATH_CURRENT_LIMIT,
     PATH_SCHEDULE,
     PATH_SESSIONS,
+    PATH_START,
     PATH_STATUS,
+    PATH_STOP,
     PATH_TELEMETRY,
     REQUEST_TIMEOUT_SECONDS,
 )
@@ -122,6 +125,16 @@ class SPConnectClient:
             PATH_CURRENT_LIMIT.format(charger_id=charger_id),
             {"amps": amps},
         )
+        return self._parse(body, Command.from_json)
+
+    async def async_start_charging(self, charger_id: str) -> Command:
+        """Resume charging, or start it now if a schedule is holding it."""
+        body = await self._request("POST", PATH_START.format(charger_id=charger_id))
+        return self._parse(body, Command.from_json)
+
+    async def async_stop_charging(self, charger_id: str) -> Command:
+        """Pause charging; the car stays plugged in."""
+        body = await self._request("POST", PATH_STOP.format(charger_id=charger_id))
         return self._parse(body, Command.from_json)
 
     async def async_get_command(self, command_id: str) -> Command:
