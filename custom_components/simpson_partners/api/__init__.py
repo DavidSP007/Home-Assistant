@@ -5,6 +5,7 @@ from .client import SPConnectClient
 from .exceptions import (
     SPConnectAuthError,
     SPConnectChargerOfflineError,
+    SPConnectCommandRefusedError,
     SPConnectConnectionError,
     SPConnectError,
     SPConnectNotFoundError,
@@ -12,6 +13,7 @@ from .exceptions import (
     SPConnectResponseError,
 )
 from .models import (
+    BlockedBy,
     CableType,
     Charger,
     ChargerState,
@@ -19,13 +21,16 @@ from .models import (
     ChargeSession,
     Command,
     CommandStatus,
+    CurrentLimit,
     Fault,
+    Schedule,
     ScheduleWindow,
     TelemetryReading,
 )
 
 __all__ = [
     "AbstractAuth",
+    "BlockedBy",
     "CableType",
     "ChargeSession",
     "Charger",
@@ -33,15 +38,18 @@ __all__ = [
     "ChargerStatus",
     "Command",
     "CommandStatus",
+    "CurrentLimit",
     "Fault",
     "SPConnectAuthError",
     "SPConnectChargerOfflineError",
     "SPConnectClient",
+    "SPConnectCommandRefusedError",
     "SPConnectConnectionError",
     "SPConnectError",
     "SPConnectNotFoundError",
     "SPConnectRateLimitError",
     "SPConnectResponseError",
+    "Schedule",
     "ScheduleWindow",
     "TelemetryReading",
 ]

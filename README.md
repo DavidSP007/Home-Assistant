@@ -17,7 +17,7 @@ the next releases. The integration cannot be added to Home Assistant yet.
 - Show charging state, power, energy, faults and recent charges.
 - Let you lock the charger, boost a charge, set the current limit and set up
   to three charging windows.
-- Start and stop charging, once the charger firmware supports it.
+- Start and stop charging.
 
 ## Installation (when released)
 

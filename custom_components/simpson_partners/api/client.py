@@ -5,13 +5,15 @@ requests, turns every failure into an ``SPConnectError`` subclass, and returns
 typed models. It holds no Home Assistant state, so it can later move into a
 standalone PyPI library unchanged.
 
-Start and stop charging are not here yet: they wait on a firmware command
-(see Architecture.md).
+Start and stop resume and pause the charge (the firmware's ``control``
+command, sent by S&P Connect). S&P Connect refuses them with 409 for chargers
+it cannot pause reliably; see Architecture.md.
 """
 
 from __future__ import annotations
 
 import logging
+import uuid
 from collections.abc import Callable, Sequence
 from http import HTTPStatus
 
@@ -19,14 +21,19 @@ import aiohttp
 
 from ..const import (
     API_VERSION_PATH,
+    HEADER_IDEMPOTENCY_KEY,
+    HEADER_REQUEST_ID,
     MAX_SCHEDULE_WINDOWS,
     PATH_CHARGER,
     PATH_CHARGERS,
     PATH_COMMAND,
     PATH_CURRENT_LIMIT,
+    PATH_REFRESH,
     PATH_SCHEDULE,
     PATH_SESSIONS,
+    PATH_START,
     PATH_STATUS,
+    PATH_STOP,
     PATH_TELEMETRY,
     REQUEST_TIMEOUT_SECONDS,
 )
@@ -34,6 +41,7 @@ from .auth import AbstractAuth
 from .exceptions import (
     SPConnectAuthError,
     SPConnectChargerOfflineError,
+    SPConnectCommandRefusedError,
     SPConnectConnectionError,
     SPConnectNotFoundError,
     SPConnectRateLimitError,
@@ -44,6 +52,8 @@ from .models import (
     ChargerStatus,
     ChargeSession,
     Command,
+    CurrentLimit,
+    Schedule,
     ScheduleWindow,
     TelemetryReading,
 )
@@ -101,6 +111,22 @@ class SPConnectClient:
         body = await self._request("GET", PATH_SESSIONS.format(charger_id=charger_id))
         return self._parse_list(body, "sessions", ChargeSession.from_json)
 
+    async def async_get_schedule(self, charger_id: str) -> Schedule:
+        """Return the charging schedule as the charger last reported it."""
+        body = await self._request("GET", PATH_SCHEDULE.format(charger_id=charger_id))
+        return self._parse(body, Schedule.from_json)
+
+    async def async_get_current_limit(self, charger_id: str) -> CurrentLimit:
+        """Return the owner's current limit and the installer's maximum."""
+        body = await self._request(
+            "GET", PATH_CURRENT_LIMIT.format(charger_id=charger_id)
+        )
+        return self._parse(body, CurrentLimit.from_json)
+
+    async def async_refresh(self, charger_id: str) -> Command:
+        """Ask the charger for a fresh report (at most once a minute)."""
+        return await self._command(PATH_REFRESH.format(charger_id=charger_id))
+
     async def async_set_schedule(
         self, charger_id: str, windows: Sequence[ScheduleWindow]
     ) -> Command:
@@ -110,38 +136,55 @@ class SPConnectClient:
                 f"At most {MAX_SCHEDULE_WINDOWS} schedule windows are allowed"
             )
         payload: JsonObject = {"windows": [window.to_json() for window in windows]}
-        body = await self._request(
-            "PUT", PATH_SCHEDULE.format(charger_id=charger_id), payload
+        return await self._command(
+            PATH_SCHEDULE.format(charger_id=charger_id), "PUT", payload
         )
-        return self._parse(body, Command.from_json)
 
     async def async_set_current_limit(self, charger_id: str, amps: int) -> Command:
         """Set the owner's charging current limit, in amps."""
-        body = await self._request(
-            "PUT",
-            PATH_CURRENT_LIMIT.format(charger_id=charger_id),
-            {"amps": amps},
+        return await self._command(
+            PATH_CURRENT_LIMIT.format(charger_id=charger_id), "PUT", {"amps": amps}
         )
-        return self._parse(body, Command.from_json)
+
+    async def async_start_charging(self, charger_id: str) -> Command:
+        """Resume charging, or start it now if a schedule is holding it."""
+        return await self._command(PATH_START.format(charger_id=charger_id))
+
+    async def async_stop_charging(self, charger_id: str) -> Command:
+        """Pause charging; the car stays plugged in."""
+        return await self._command(PATH_STOP.format(charger_id=charger_id))
 
     async def async_get_command(self, command_id: str) -> Command:
         """Return the delivery state of a command sent earlier."""
         body = await self._request("GET", PATH_COMMAND.format(command_id=command_id))
         return self._parse(body, Command.from_json)
 
+    async def _command(
+        self, path: str, method: str = "POST", payload: JsonObject | None = None
+    ) -> Command:
+        """Send a command with a fresh Idempotency-Key and return its record."""
+        key = uuid.uuid4().hex
+        body = await self._request(method, path, payload, {HEADER_IDEMPOTENCY_KEY: key})
+        return self._parse(body, Command.from_json)
+
     async def _request(
-        self, method: str, path: str, payload: JsonObject | None = None
+        self,
+        method: str,
+        path: str,
+        payload: JsonObject | None = None,
+        extra_headers: dict[str, str] | None = None,
     ) -> object:
         """Send one request and return its decoded JSON body."""
         token = await self._auth.async_get_access_token()
         url = self._root + path
+        headers = {"Authorization": f"Bearer {token}", **(extra_headers or {})}
         _LOGGER.debug("S&P Connect request %s %s", method, path)
         try:
             async with self._session.request(
                 method,
                 url,
                 json=payload,
-                headers={"Authorization": f"Bearer {token}"},
+                headers=headers,
                 timeout=self._timeout,
             ) as response:
                 if response.status >= HTTPStatus.BAD_REQUEST:
@@ -169,7 +212,10 @@ class SPConnectClient:
         """Raise the exception that matches an error response."""
         status = response.status
         code, message = await _read_error(response)
+        request_id = response.headers.get(HEADER_REQUEST_ID)
         detail = f"{method} {path} returned {status}: {message or code or 'no detail'}"
+        if request_id:
+            detail += f" (request {request_id})"
         _LOGGER.debug("S&P Connect error %s", detail)
         if status == HTTPStatus.UNAUTHORIZED:
             raise SPConnectAuthError(detail)
@@ -177,6 +223,8 @@ class SPConnectClient:
             raise SPConnectNotFoundError(detail)
         if status == HTTPStatus.CONFLICT and code == ERROR_CHARGER_OFFLINE:
             raise SPConnectChargerOfflineError(detail)
+        if status == HTTPStatus.CONFLICT:
+            raise SPConnectCommandRefusedError(detail, code)
         if status == HTTPStatus.TOO_MANY_REQUESTS:
             raise SPConnectRateLimitError(detail, _retry_after(response))
         raise SPConnectResponseError(detail, status, code)

@@ -16,6 +16,7 @@ from aiohttp.typedefs import Handler
 VALID_TOKEN = "test-access-token"
 CHARGER_ID = "chg_1"
 COMMAND_ID = "cmd_1"
+REQUEST_ID = "req_test_1"
 
 
 @dataclass(slots=True)
@@ -35,10 +36,14 @@ class MockConnectState:
     status: dict[str, object] = field(default_factory=dict)
     telemetry: list[dict[str, object]] = field(default_factory=list)
     sessions: list[dict[str, object]] = field(default_factory=list)
+    schedule: dict[str, object] = field(default_factory=dict)
+    current_limit: dict[str, object] = field(default_factory=dict)
     command_status: str = "sent"
+    command_message: str | None = None
     error: InjectedError | None = None
     raw_body: str | None = None
     received: list[tuple[str, str, object]] = field(default_factory=list)
+    idempotency_keys: list[str | None] = field(default_factory=list)
 
 
 def default_state() -> MockConnectState:
@@ -72,6 +77,15 @@ def default_state() -> MockConnectState:
                 "solar_kw": None,
             }
         ],
+        schedule={
+            "windows": [{"start": "00:30", "end": "04:30"}],
+            "reported_at": "2026-10-24T09:00:00+00:00",
+        },
+        current_limit={
+            "amps": 16,
+            "max_amps": 32,
+            "reported_at": "2026-10-24T09:00:00+00:00",
+        },
         sessions=[
             {
                 "started_at": "2026-10-23T22:00:00+00:00",
@@ -95,14 +109,24 @@ def create_app(state: MockConnectState) -> web.Application:
         """Record the request, then apply auth and any injected failure."""
         body = await request.json() if request.can_read_body else None
         state.received.append((request.method, request.path, body))
+        state.idempotency_keys.append(request.headers.get("Idempotency-Key"))
         if request.headers.get("Authorization") != f"Bearer {VALID_TOKEN}":
-            return _error(401, "invalid_token", "Access token is not valid")
-        if state.error is not None:
+            response: web.StreamResponse = _error(
+                401, "unauthorized", "Access token is not valid"
+            )
+        elif state.error is not None:
             err = state.error
-            return web.json_response(err.body, status=err.status, headers=err.headers)
-        if state.raw_body is not None:
-            return web.Response(text=state.raw_body, content_type="application/json")
-        return await handler(request)
+            response = web.json_response(
+                err.body, status=err.status, headers=err.headers
+            )
+        elif state.raw_body is not None:
+            response = web.Response(
+                text=state.raw_body, content_type="application/json"
+            )
+        else:
+            response = await handler(request)
+        response.headers.setdefault("X-Request-Id", REQUEST_ID)
+        return response
 
     def charger_or_404(request: web.Request) -> web.Response | None:
         """Return a 404 response when the charger id is unknown."""
@@ -136,15 +160,27 @@ def create_app(state: MockConnectState) -> web.Application:
             {"sessions": state.sessions}
         )
 
+    async def schedule(request: web.Request) -> web.Response:
+        return charger_or_404(request) or web.json_response(state.schedule)
+
+    async def current_limit(request: web.Request) -> web.Response:
+        return charger_or_404(request) or web.json_response(state.current_limit)
+
     async def command_accepted(request: web.Request) -> web.Response:
         return charger_or_404(request) or web.json_response(
-            {"id": COMMAND_ID, "status": "sent"}, status=202
+            {"id": COMMAND_ID, "status": "sent", "message": None}, status=202
         )
 
     async def command(request: web.Request) -> web.Response:
         if request.match_info["command_id"] != COMMAND_ID:
             return _error(404, "not_found", "No such command")
-        return web.json_response({"id": COMMAND_ID, "status": state.command_status})
+        return web.json_response(
+            {
+                "id": COMMAND_ID,
+                "status": state.command_status,
+                "message": state.command_message,
+            }
+        )
 
     app = web.Application(middlewares=[guard])
     app.router.add_get("/v1/chargers", chargers)
@@ -152,12 +188,19 @@ def create_app(state: MockConnectState) -> web.Application:
     app.router.add_get("/v1/chargers/{charger_id}/status", status)
     app.router.add_get("/v1/chargers/{charger_id}/telemetry", telemetry)
     app.router.add_get("/v1/chargers/{charger_id}/sessions", sessions)
+    app.router.add_get("/v1/chargers/{charger_id}/schedule", schedule)
     app.router.add_put("/v1/chargers/{charger_id}/schedule", command_accepted)
+    app.router.add_get("/v1/chargers/{charger_id}/current-limit", current_limit)
+    app.router.add_post("/v1/chargers/{charger_id}/refresh", command_accepted)
     app.router.add_put("/v1/chargers/{charger_id}/current-limit", command_accepted)
+    app.router.add_post("/v1/chargers/{charger_id}/start", command_accepted)
+    app.router.add_post("/v1/chargers/{charger_id}/stop", command_accepted)
     app.router.add_get("/v1/commands/{command_id}", command)
     return app
 
 
 def _error(status: int, code: str, message: str) -> web.Response:
-    """Return an error in S&P Connect's ``{"error", "message"}`` shape."""
-    return web.json_response({"error": code, "message": message}, status=status)
+    """Return an error in S&P Connect's ``{"error", "message", "request_id"}`` shape."""
+    return web.json_response(
+        {"error": code, "message": message, "request_id": REQUEST_ID}, status=status
+    )
