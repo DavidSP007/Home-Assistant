@@ -15,6 +15,7 @@ from custom_components.simpson_partners.api import (
     SPConnectAuthError,
     SPConnectChargerOfflineError,
     SPConnectClient,
+    SPConnectCommandRefusedError,
     SPConnectConnectionError,
     SPConnectNotFoundError,
     SPConnectRateLimitError,
@@ -22,7 +23,13 @@ from custom_components.simpson_partners.api import (
 )
 
 from .conftest import FixedTokenAuth
-from .mock_connect import CHARGER_ID, COMMAND_ID, InjectedError, MockConnectState
+from .mock_connect import (
+    CHARGER_ID,
+    COMMAND_ID,
+    REQUEST_ID,
+    InjectedError,
+    MockConnectState,
+)
 
 
 async def test_get_chargers(client: SPConnectClient) -> None:
@@ -125,13 +132,13 @@ async def test_stop_refused_for_site_charger(
 ) -> None:
     """A charger S&P Connect cannot pause reliably is refused with its code."""
     state.error = InjectedError(
-        409, {"error": "control_unavailable", "message": "Managed by a site"}
+        409, {"error": "managed_by_site", "message": "Managed by a site"}
     )
 
-    with pytest.raises(SPConnectResponseError) as caught:
+    with pytest.raises(SPConnectCommandRefusedError) as caught:
         await client.async_stop_charging(CHARGER_ID)
-    assert caught.value.status == 409
-    assert caught.value.code == "control_unavailable"
+    assert caught.value.code == "managed_by_site"
+    assert "Managed by a site" in str(caught.value)
 
 
 async def test_get_command(client: SPConnectClient, state: MockConnectState) -> None:
@@ -141,6 +148,20 @@ async def test_get_command(client: SPConnectClient, state: MockConnectState) -> 
     command = await client.async_get_command(COMMAND_ID)
 
     assert command.status is CommandStatus.ACKNOWLEDGED
+    assert command.message is None
+
+
+async def test_rejected_command_carries_reason(
+    client: SPConnectClient, state: MockConnectState
+) -> None:
+    """A rejected command explains why in plain English."""
+    state.command_status = "rejected"
+    state.command_message = "The charger refused the schedule"
+
+    command = await client.async_get_command(COMMAND_ID)
+
+    assert command.status is CommandStatus.REJECTED
+    assert command.message == "The charger refused the schedule"
 
 
 async def test_bad_token_raises_auth_error(
@@ -171,16 +192,47 @@ async def test_offline_charger_raises_offline_error(
         await client.async_set_current_limit(CHARGER_ID, 16)
 
 
-async def test_other_conflict_is_a_response_error(
+async def test_other_conflict_is_a_refusal(
     client: SPConnectClient, state: MockConnectState
 ) -> None:
-    """A 409 for any other reason keeps its status and code."""
-    state.error = InjectedError(409, {"error": "busy", "message": "Try later"})
+    """A 409 for any other reason is a refusal that keeps its code."""
+    state.error = InjectedError(409, {"error": "user_locked", "message": "Locked"})
 
-    with pytest.raises(SPConnectResponseError) as caught:
+    with pytest.raises(SPConnectCommandRefusedError) as caught:
         await client.async_set_current_limit(CHARGER_ID, 16)
-    assert caught.value.status == 409
-    assert caught.value.code == "busy"
+    assert caught.value.code == "user_locked"
+
+
+async def test_error_carries_request_id(client: SPConnectClient) -> None:
+    """The X-Request-Id is in the error, so the owner can quote it to support."""
+    with pytest.raises(SPConnectNotFoundError, match=REQUEST_ID):
+        await client.async_get_status("chg_other")
+
+
+async def test_get_schedule_and_current_limit(client: SPConnectClient) -> None:
+    """The reported schedule and limits are read back."""
+    schedule = await client.async_get_schedule(CHARGER_ID)
+    limit = await client.async_get_current_limit(CHARGER_ID)
+
+    assert schedule.windows == (ScheduleWindow(time(0, 30), time(4, 30)),)
+    assert limit.amps == 16
+    assert limit.max_amps == 32
+
+
+async def test_commands_send_a_fresh_idempotency_key(
+    client: SPConnectClient, state: MockConnectState
+) -> None:
+    """Each command has its own key; reads have none."""
+    await client.async_refresh(CHARGER_ID)
+    await client.async_start_charging(CHARGER_ID)
+    await client.async_get_status(CHARGER_ID)
+
+    refresh_key, start_key, read_key = state.idempotency_keys
+    assert refresh_key
+    assert start_key
+    assert refresh_key != start_key
+    assert read_key is None
+    assert state.received[0][1] == f"/v1/chargers/{CHARGER_ID}/refresh"
 
 
 async def test_rate_limit_carries_retry_after(

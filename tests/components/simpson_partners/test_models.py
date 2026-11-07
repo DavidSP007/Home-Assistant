@@ -7,10 +7,15 @@ from datetime import UTC, datetime, time
 import pytest
 
 from custom_components.simpson_partners.api import (
+    BlockedBy,
     CableType,
     Charger,
+    ChargerState,
     ChargerStatus,
     Command,
+    CommandStatus,
+    CurrentLimit,
+    Schedule,
     ScheduleWindow,
 )
 from custom_components.simpson_partners.api.parsing import (
@@ -42,10 +47,53 @@ def test_charger_cable_type() -> None:
     assert charger.cable_type is CableType.SOCKET
 
 
-def test_unknown_enum_value_is_rejected() -> None:
-    """An unknown state is an error, not a silent default."""
-    with pytest.raises(ValueError, match="'exploding'"):
-        ChargerStatus.from_json({"state": "exploding"})
+def test_unknown_state_is_unknown() -> None:
+    """S&P Connect sends "unknown" for an offline charger, and may add states later."""
+    assert ChargerStatus.from_json({"state": "unknown"}).state is ChargerState.UNKNOWN
+    assert ChargerStatus.from_json({"state": "boosting"}).state is ChargerState.UNKNOWN
+
+
+def test_unknown_extensible_values_are_unknown() -> None:
+    """Every list the contract marks extensible tolerates new values."""
+    charger = Charger.from_json(
+        {"id": "c", "serial": "S", "online": True, "cable_type": "wireless"}
+    )
+    command = Command.from_json({"id": "x", "status": "queued"})
+    status = ChargerStatus.from_json({"state": "idle", "blocked_by": "maintenance"})
+
+    assert charger.cable_type is CableType.UNKNOWN
+    assert command.status is CommandStatus.UNKNOWN
+    assert status.blocked_by is BlockedBy.UNKNOWN
+
+
+def test_status_blocked_by_and_fault_without_code() -> None:
+    """A support hold is reported, and a fault may have no code."""
+    status = ChargerStatus.from_json(
+        {
+            "state": "fault",
+            "blocked_by": "support_hold",
+            "faults": [
+                {"code": None, "title": "Fault", "message": "Call us", "severity": "x"}
+            ],
+        }
+    )
+
+    assert status.blocked_by is BlockedBy.SUPPORT_HOLD
+    assert status.faults[0].code is None
+
+
+def test_schedule_requires_windows_list() -> None:
+    """A schedule without its windows list is rejected."""
+    with pytest.raises(ValueError, match="windows is missing"):
+        Schedule.from_json({})
+
+
+def test_current_limit_may_be_unreported() -> None:
+    """Both limits may be null until the charger reports them."""
+    limit = CurrentLimit.from_json({"amps": None, "max_amps": None})
+
+    assert limit.amps is None
+    assert limit.max_amps is None
 
 
 def test_status_defaults_to_no_faults() -> None:

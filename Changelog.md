@@ -8,3 +8,6 @@
 - HACS packaging and CI quality gates.
 - Licensed under the Apache License 2.0.
 - Start and stop charging in the API client.
+- Client matches the live S&P Connect contract: unknown states no longer
+  fail, faults may have no code, `blocked_by`, schedule and current-limit
+  reads, refresh, idempotent commands and a typed refusal error.

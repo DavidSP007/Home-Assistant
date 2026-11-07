@@ -32,10 +32,15 @@ internal databases.
   rejected (start re-authentication), charger offline, not found, rate
   limited (with the wait time), unreachable, and anything else unexpected.
   Callers never read error text to decide what to do.
-- **Strict parsing.** A response missing a required field raises an error
-  instead of producing a half-filled model. All field names live in
-  `api/models.py`, because S&P Connect has not yet published its final
-  OpenAPI file and some names may change.
+- **Strict parsing, tolerant lists.** A response missing a required field
+  raises an error instead of producing a half-filled model. A list the contract
+  marks as extensible (state, command status, cable type, `blocked_by`) reads
+  an unfamiliar value as `unknown`, so a new value on the server never breaks
+  polling. All field names live in `api/models.py` and follow S&P Connect's
+  `connect-v1.yaml`.
+- **Commands are idempotent.** Each command carries a fresh `Idempotency-Key`,
+  so a retry after a dropped connection never sends the command to the
+  charger twice.
 - **Start and stop pause and resume the charge.** S&P Connect sends the
   firmware's `control` command with only its pause flag. Chargers attached to
   a business site on the legacy server are refused, because that server undoes

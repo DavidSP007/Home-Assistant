@@ -27,6 +27,20 @@ class SPConnectChargerOfflineError(SPConnectError):
     """A command was refused because the charger is offline (409)."""
 
 
+class SPConnectCommandRefusedError(SPConnectError):
+    """The charger cannot take this command now (409), for the reason in ``code``.
+
+    Codes include ``user_locked``, ``support_hold``, ``charger_in_ocpp_mode``,
+    ``controlled_by_partner`` and ``managed_by_site``; the message is plain
+    English, safe to show the owner.
+    """
+
+    def __init__(self, message: str, code: str | None) -> None:
+        """Store S&P Connect's reason code alongside the message."""
+        super().__init__(message)
+        self.code = code
+
+
 class SPConnectRateLimitError(SPConnectError):
     """Too many requests (429); retry after the given number of seconds."""
 
